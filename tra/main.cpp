@@ -1,72 +1,69 @@
 #include <iostream>
 #include <fstream>
 #include <string>
-#include <math.h>
+#include <cmath>
 #include <assert.h>
-using namespace std;
 
-void update_coords(double dist, double alpha, double& x, double& y) {
-    x = x + dist * cos(alpha);
-    y = y + dist * sin(alpha);
+#include "point.h"
+
+void rotate(Point& p, double alpha, const Point& center) {
+    // go to origin, make a rotation, return back
+    p -= center;
+    p.rotate(alpha);
+    p += center;
 }
 
-double get_dist(double d_x, double d_y) {
-    return sqrt(d_x * d_x + d_y * d_y);
-}
+int main(int argc, char const *argv[]) {
+    Point center(0, 0);
 
-void fix_coords(double dist, double alpha, double& x1, double& y1, double& x2, double& y2) {
-    double fix = (get_dist(x2 - x1, y2 - y1) - dist) / 2;
-    update_coords(fix, alpha - M_PI_2, x1, y1);
-    update_coords(fix, alpha + M_PI_2, x2, y2);
-}
+    std::ifstream src_file(argv[1]);
+    std::ofstream res_file;
 
-int main(int argc, char const *argv[])
-{
-    double x = 0, y = 0, alpha = 0;
-    ifstream src_file(argv[1]);
-    ofstream res_file;
-    // I put lines "x y" here to make a plot with a path of a car
     res_file.open("res.txt");
 
-    if (!src_file.is_open())
+    if (!src_file.is_open() || !res_file.is_open())
         return -1;
     
     double b, r;
     src_file >> b >> r;
-    double x1 = 0, y1 = b / 2;
-    double x2 = 0, y2 = -b / 2;
+    Point wheel1(0, b / 2), wheel2(0, -b / 2);
 
-    double old_th1 = 0, old_th2 = 0;
-    double old_xx = 0, old_yy = -b;
+    double old_th1 = 0, old_th2 = 0, alpha = 0;
 
     while (!src_file.eof()) {
         double t, th1, th2;
         src_file >> t >> th1 >> th2;
-        // It's easier to work with deltas of theta rather than theta itself.
-        // Current distance is delta (in radians) * radius.
-        update_coords((th1 - old_th1) * r, alpha, x1, y1);
-        update_coords((th2 - old_th2) * r, alpha, x2, y2);
 
-        x = (x1 + x2) / 2;
-        y = (y1 + y2) / 2;
+        // length of a sector that wheel rolled
+        double d1 = (th1 - old_th1) * r;
+        double d2 = (th2 - old_th2) * r;
+        // angle and radius of rotation
+        double rotationAlpha = (d1 - d2) / b;
+        double rotationR = d2 / rotationAlpha;
 
-        double xx = x2 - x1;
-        double yy = y2 - y1;
-        alpha -= acos((xx * old_xx + yy * old_yy) / (get_dist(xx, yy) * get_dist(old_xx, old_yy)));
-        // Our wheels will move away from each other,
-        // so we need to make a small correction.
-        // I put it closer so that distance between them remains the same.
-        fix_coords(b, alpha, x1, y1, x2, y2);
+        Point diff = wheel1 - wheel2;
+        Point moveVector(diff.y, -diff.x);
+        // center point of the rotation
+        Point rotationPoint = wheel2 - diff / diff.getDist() * rotationR;
 
-        res_file << x << "\t" << y << "\t" << alpha << "\n";
+        if (std::abs(rotationAlpha) > 1e-8) {
+            rotate(wheel1, -rotationAlpha, rotationPoint);
+            rotate(wheel2, -rotationAlpha, rotationPoint);
+        } else {
+            // we need to make parallel move
+            moveVector *= d1 / moveVector.getDist();
+            wheel1 += moveVector;
+            wheel2 += moveVector;
+        }
+
+        center = (wheel1 + wheel2) / 2;
+        alpha = atan2(moveVector.y, moveVector.x);
+        res_file << center << "\t" << alpha << "\n";
+
         old_th1 = th1;
         old_th2 = th2;
-        old_xx = xx;
-        old_yy = yy;
     }
-    src_file.close();
-    res_file.close();
 
-    cout << x << "\t" << y << "\t" << alpha << endl;
+    std::cout << center << "\t" << alpha << "\n";
     return 0;
 }
