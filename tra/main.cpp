@@ -14,6 +14,11 @@ struct Point {
         y = y + dist * sin(alpha);
     }
 
+    void move(const Point& b, double phi) {
+        x = (x - b.x) * cos(phi) + (y - b.y) * sin(phi) + b.x;
+        y = (y - b.y) * cos(phi) - (x - b.x) * sin(phi) + b.y;
+    }
+
     double get_dist(const Point& b) const {
         return sqrt(pow(x - b.x, 2) + pow(y - b.y, 2));
     }
@@ -30,10 +35,8 @@ double get_dist(double d_x, double d_y) {
     return sqrt(d_x * d_x + d_y * d_y);
 }
 
-void fix_coords(double dist, double alpha, Point& p1, Point& p2) {
-    double fix = (p1.get_dist(p2) - dist) / 2;
-    p1.move(fix, alpha - M_PI_2);
-    p2.move(fix, alpha + M_PI_2);
+bool eq(double a, double b) {
+    return abs(a - b) < __DBL_EPSILON__;
 }
 
 int main(int argc, char const *argv[])
@@ -56,12 +59,45 @@ int main(int argc, char const *argv[])
     double old_xx = 0, old_yy = -b;
 
     while (!src_file.eof()) {
-        double t, th1, th2;
+        cout << "_ " << p1 << "\t" << p2 << "\t" << alpha << endl;
+        cout << "@ " << p << "\t" << alpha << endl;
+        cout << p1.get_dist(p2) << "\t" << b << endl;
+        assert(eq(p1.get_dist(p2), b));
+        double t, th1, th2, d_th1, d_th2;
         src_file >> t >> th1 >> th2;
-        // It's easier to work with deltas of theta rather than theta itself.
-        // Current distance is delta (in radians) * radius.
-        p1.move((th1 - old_th1) * r, alpha);
-        p2.move((th2 - old_th2) * r, alpha);
+        d_th1 = th1 - old_th1;
+        d_th2 = th2 - old_th2;
+        if (eq(d_th1, 0) && eq(d_th2, 0))
+            continue;
+
+        if (d_th1 > d_th2) {
+            cout << "swapped\n";
+            swap(th1, th2);
+            swap(d_th1, d_th2);
+            swap(p1, p2);
+            old_xx = -old_xx;
+            old_yy = -old_yy;
+        }
+
+        double phi = (d_th2 - d_th1) / b;
+        if (eq(phi, 0)) {
+            p1.move(d_th1, alpha);
+            p2.move(d_th2, alpha);
+            p.x = (p1.x + p2.x) / 2;
+            p.y = (p1.y + p2.y) / 2;
+            res_file << p << "\t" << alpha << "\n";
+            old_th1 = th1;
+            old_th2 = th2;
+            continue;
+        }
+
+        double cur_r = d_th1 / phi;
+        double lambda = b / cur_r;
+        Point p0((p1.x * (1 + lambda) - p2.x) / lambda, (p1.y * (1 + lambda) - p2.y) / lambda);
+        cout << "* " << p0 << "\t" << phi << "\t" << cur_r << "\t" << lambda << endl;
+        //if (isnan(phi) || isnan(cur_r) || isnan(lambda)) continue;
+        p1.move(p0, phi);
+        p2.move(p0, phi);
 
         p.x = (p1.x + p2.x) / 2;
         p.y = (p1.y + p2.y) / 2;
@@ -69,16 +105,12 @@ int main(int argc, char const *argv[])
         double xx = p2.x - p1.x;
         double yy = p2.y - p1.y;
         alpha -= acos((xx * old_xx + yy * old_yy) / (get_dist(xx, yy) * get_dist(old_xx, old_yy)));
-        // Our wheels will move away from each other,
-        // so we need to make a small correction.
-        // I put it closer so that distance between them remains the same.
-        fix_coords(b, alpha, p1, p2);
-
         res_file << p << "\t" << alpha << "\n";
         old_th1 = th1;
         old_th2 = th2;
         old_xx = xx;
         old_yy = yy;
+        if (t > 0.1) break;
     }
     src_file.close();
     res_file.close();
